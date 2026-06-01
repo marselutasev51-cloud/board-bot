@@ -87,6 +87,7 @@ HELP_TEXT = """ℹ️ *Как пользоваться ботом*
 *Команды:*
 /start — приветствие и знакомство с советом
 /help — эта справка
+/summary — итоги разговора: ключевые решения и задачи
 /reset — очистить историю разговора и начать заново
 
 *Совет:* чем конкретнее задача, тем точнее и полезнее ответы директоров."""
@@ -102,6 +103,57 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"User {update.effective_user.id} requested help")
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+
+
+SUMMARY_PROMPT = """Подведи итоги нашего разговора от лица совета директоров.
+Структурируй ответ так:
+
+📋 **Итоги заседания совета директоров**
+
+**Что обсуждали:**
+[1-2 предложения о теме разговора]
+
+**Ключевые решения и выводы:**
+[пронумерованный список главных инсайтов и договорённостей из разговора]
+
+**Задачи к исполнению:**
+[пронумерованный список конкретных следующих шагов, которые были названы или вытекают из обсуждения, с указанием ответственного директора где уместно]
+
+Будь конкретным — опирайся только на то, что реально обсуждалось в этом разговоре."""
+
+
+async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    history = chat_histories[chat_id]
+
+    if not history:
+        await update.message.reply_text(
+            "📋 Пока нечего подводить — разговор ещё не начался. Напишите задачу совету директоров!"
+        )
+        return
+
+    logger.info(f"Chat {chat_id} requested summary")
+    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+
+    messages = (
+        [{"role": "system", "content": SYSTEM_PROMPT}]
+        + history[-MAX_HISTORY:]
+        + [{"role": "user", "content": SUMMARY_PROMPT}]
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=1500,
+        )
+        reply = response.choices[0].message.content
+        await update.message.reply_text(reply, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}")
+        await update.message.reply_text(
+            "⚠️ Не удалось подготовить итоги. Попробуйте ещё раз."
+        )
 
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -152,6 +204,7 @@ def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("summary", summary_command))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot is running. Press Ctrl+C to stop.")
