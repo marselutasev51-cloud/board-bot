@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from openai import OpenAI
 
 logging.basicConfig(
@@ -48,6 +48,52 @@ SYSTEM_PROMPT = """Ты — совет директоров из 6 челове�
 
 Каждый директор высказывается конкретно, по существу, в контексте своей роли. Ответы — на русском языке. Избегай общих фраз — давай практические, острые инсайты."""
 
+START_TEXT = """👋 Добро пожаловать в *Совет директоров*!
+
+Здесь вашу задачу по контент-стратегии разбирают шесть топ-менеджеров:
+
+🏢 *CEO* — стратегия и позиционирование бренда
+💰 *CFO* — бюджет, ROI и монетизация
+📣 *CMO* — аудитория, каналы и кампании
+🎨 *Creative Director* — концепции, визуал и tone of voice
+🚀 *Head of Virality* — виральность, тренды и охват
+⚙️ *COO* — исполнение, процессы и сроки
+
+Просто напишите задачу или вопрос — и совет немедленно приступит к работе.
+
+Например:
+• _«Нужно запустить новый продукт в соцсетях за 2 недели»_
+• _«Какой контент лучше всего работает для B2B-аудитории?»_
+• _«Как увеличить органический охват без бюджета?»_"""
+
+HELP_TEXT = """ℹ️ *Как пользоваться ботом*
+
+Отправьте любое сообщение с задачей или вопросом по контент-стратегии — и все шесть директоров выскажут своё мнение.
+
+*Что можно спрашивать:*
+• Стратегия запуска продукта или кампании
+• Выбор каналов и форматов контента
+• Анализ идей и гипотез
+• Планирование бюджета на контент
+• Виральные механики и growth-стратегии
+• Процессы производства и дистрибуции контента
+
+*Команды:*
+/start — приветствие и знакомство с советом
+/help — эта справка
+
+*Совет:* чем конкретнее задача, тем точнее и полезнее ответы директоров."""
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(f"User {update.effective_user.id} started the bot")
+    await update.message.reply_text(START_TEXT, parse_mode="Markdown")
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(f"User {update.effective_user.id} requested help")
+    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_text = update.message.text
@@ -80,6 +126,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def main() -> None:
     logger.info("Starting Board of Directors bot...")
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot is running. Press Ctrl+C to stop.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
