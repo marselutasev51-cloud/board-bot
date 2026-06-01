@@ -1,5 +1,6 @@
 import os
 import logging
+from collections import defaultdict
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from openai import OpenAI
@@ -14,6 +15,10 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+MAX_HISTORY = 20
+
+chat_histories: dict[int, list[dict]] = defaultdict(list)
 
 SYSTEM_PROMPT = """Ты — совет директоров из 6 человек, анализирующий задачи по контент-стратегии.
 На каждое сообщение пользователя ты отвечаешь от лица всех шести директоров по очереди.
@@ -46,7 +51,8 @@ SYSTEM_PROMPT = """Ты — совет директоров из 6 челове�
 ⚙️ **COO:**
 [мнение COO]
 
-Каждый директор высказывается конкретно, по существу, в контексте своей роли. Ответы — на русском языке. Избегай общих фраз — давай практические, острые инсайты."""
+Каждый директор высказывается конкретно, по существу, в контексте своей роли. Ответы — на русском языке. Избегай общих фраз — давай практические, острые инсайты.
+Помни контекст предыдущих сообщений в этом разговоре и ссылайся на него при необходимости."""
 
 START_TEXT = """👋 Добро пожаловать в *Совет директоров*!
 
@@ -81,18 +87,31 @@ HELP_TEXT = """ℹ️ *Как пользоваться ботом*
 *Команды:*
 /start — приветствие и знакомство с советом
 /help — эта справка
+/reset — очистить историю разговора и начать заново
 
 *Совет:* чем конкретнее задача, тем точнее и полезнее ответы директоров."""
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
     logger.info(f"User {update.effective_user.id} started the bot")
+    chat_histories[chat_id].clear()
     await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"User {update.effective_user.id} requested help")
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+
+
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    chat_histories[chat_id].clear()
+    logger.info(f"Chat {chat_id} history cleared")
+    await update.message.reply_text(
+        "🔄 История разговора очищена. Совет директоров готов к новой задаче.",
+        parse_mode="Markdown",
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -103,21 +122,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
+    history = chat_histories[chat_id]
+    history.append({"role": "user", "content": user_text})
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history[-MAX_HISTORY:]
+
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
+            messages=messages,
             max_tokens=2000,
         )
 
         reply = response.choices[0].message.content
+        history.append({"role": "assistant", "content": reply})
+
         await update.message.reply_text(reply, parse_mode="Markdown")
 
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
+        history.pop()
         await update.message.reply_text(
             "⚠️ Произошла ошибка при обращении к совету директоров. Попробуйте ещё раз."
         )
@@ -128,6 +152,7 @@ def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Bot is running. Press Ctrl+C to stop.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
