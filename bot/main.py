@@ -14,9 +14,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1",
+)
 
 MAX_HISTORY = 20
 MAX_MSG_LEN = 4000
@@ -224,7 +227,7 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     try:
         response = client.chat.completions.create(
-            model="gpt-4o", messages=messages, max_tokens=1500
+            model="llama-3.3-70b-versatile", messages=messages, max_tokens=1500
         )
         stop.set()
         await send_reply(update, response.choices[0].message.content)
@@ -281,7 +284,7 @@ async def focus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o", messages=messages, max_tokens=1500
+            model="llama-3.3-70b-versatile", messages=messages, max_tokens=1500
         )
         stop.set()
         reply = f"{emoji} *{name}* — детальный анализ:\n\n" + response.choices[0].message.content
@@ -314,7 +317,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o", messages=messages, max_tokens=2500
+            model="llama-3.3-70b-versatile", messages=messages, max_tokens=2500
         )
         stop.set()
         reply = response.choices[0].message.content
